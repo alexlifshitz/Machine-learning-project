@@ -1,0 +1,98 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Alexander Lifshitz"
+date: "January 31, 2016"
+output: html_document
+---
+## Summary
+
+This works presents predictive analysis of [Weight Lifting Exercises(WLE) Dataset](http://groupware.les.inf.puc-rio.br/har).
+The dataset includes data collected by wearable sensors of specific dumbbell exercise performed in five different fashions. Class A corresponds to the specified execution of the exercise, while the other 4 classes (B,C,D,E) correspond to common mistakes. In this work we construct a Random Forest classifier which is trained on a training set and then used to classify data given in the testing set. To estimate the performance of the classifier we use a separate validation set which was constructed by subsetting initial training set (and of course was not used for training). The constructed Random Forest classifier achieves extremely high overall accuracy of 99.64% (on a validation set) and correctly classifies all 20 samples of the test dataset.
+
+## Loading and cleaning data
+
+First we shall remove columns that contain mostly NA values.
+```{r}
+# Loading training data set and removing irrelevant columns 
+cwd<-getwd()
+training.all <- read.csv(file.path(cwd, "pml-training.csv", fsep = .Platform$file.sep), na.strings = c("NA", "#DIV/0!"))
+dim(training.all)
+
+ind_col <- colSums(is.na(training.all))<19000
+training.all <-training.all[,ind_col]
+dim(training.all)
+```
+We confirm that the remaining dataset does not contain any NA values. 
+```{r}
+table(complete.cases(training.all))
+```
+
+Then the first 7 columns irrelevant for the classification purposes are removed as well. 
+```{r}
+training.all <-training.all[,-c(1:7)]
+names(training.all)
+```
+
+The remaing dataset includes 53 features corresponding to 13 measurements of 4 sensors (belt, arm, dumbbell, forearm) plus a coulmn 'classe' which includes data labels which we wil luse for training. 
+
+Now we repeat the same data cleaning process for the test dataset
+```{r}
+# Loading the testing data set and removing irrelevant columns 
+testing <- read.csv(file.path(cwd, "pml-testing.csv", fsep = .Platform$file.sep),na.strings = c("NA", "#DIV/0!"))
+testing <- testing[,ind_col]
+testing <-testing[,-c(1:7)]
+```
+
+## Splitting a training set into training and validation subsets
+
+In order to validate the prediction model we will split the training set into two unequal subsets: 70% will be used for the actual training and 30% for validation.
+```{r}
+library(caret)
+
+# Spliting training set to 70% training and 30% validation sets
+set.seed(3141)
+inTrain <- createDataPartition(y=training.all$classe, p=0.7, list=FALSE)
+
+training <- training.all[inTrain,]
+validation <- training.all[-inTrain,]
+```
+
+## Constructing a Random Forest Classifier
+
+We suggest to construct Random Forest classifier which constructs multiple independent decision trees (we will use 300) and determines the classification output by using a majority rule. 
+```{r, warning=FALSE}
+library(randomForest)
+fit_rf = randomForest(classe~., data=training, ntree=300,proximity=TRUE)
+```
+
+For the training set the total Out Of Bag (OOB) error is about 0.55%, which implies very high accuracy.
+```{r}
+tail(fit_rf$err.rate,1)
+```
+
+We can also plot model error rate vs number of trees.
+```{r}
+#Plotting model error vs number of trees
+plot(fit_rf, log="y",main = "Random Forest Error vs Number of trees")
+legend("topright", legend=c("OOB", as.character(unique(training$classe))), col=1:6, pch=19)
+```
+
+Even though we used 300 trees in our model, from the error graph above we can conclude that the algorithm achieves optimal performance after growing about 100-150 trees. 
+
+Let us now test our model on a validation set.
+```{r, warning=FALSE}
+p_rf <- predict(fit_rf,validation)
+confusionMatrix(p_rf,validation$classe)
+```
+The confusion matrix indicates that the obtained classifier performs extremely well on a validation set with overall accuracy of 99.64%.
+
+## Predicting outcomes for test dataset 
+
+Applying the classifier to the 20 samples of the test set yields
+```{r}
+predict_testing<-predict(fit_rf,testing)
+print(predict_testing)
+```
+
+These results are confirmed as 100% correct (via Project Prediction Quiz).
+
